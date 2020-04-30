@@ -1,9 +1,10 @@
 ---
-title: "TALLER DE CLUSTERING"
+title: "Taller de clustering"
 author: "Antonio Sánchez Chinchón"
+date: "Mayo 2020"
 output:
   html_document:
-    css: img/base2.css
+    css: img/base.css
     toc: yes
     toc_float: yes
   pdf_document:
