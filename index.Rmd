@@ -1,6 +1,6 @@
 ---
 title: "TALLER DE CLUSTERING"
-author: "Antonio Sánchez Chinchón"
+author: "Antonio S. Chinchón"
 output:
   html_document:
     css: img/base2.css
