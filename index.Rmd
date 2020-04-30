@@ -1,0 +1,269 @@
+---
+title: "TALLER DE CLUSTERING"
+author: "Antonio Sánchez Chinchón"
+output:
+  html_document:
+    css: img/base2.css
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+---
+
+<style>
+.list-group {
+  font-size:medium
+}
+</style>
+
+<style>
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {
+    background-color: #11bf42;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) 
+```
+
+[<img src="./img/pokemon.jpg" width="500">]()
+
+En este vamos a hacer machine learning. En concreto entrenaremos un modelo de clustering. Usaremos tanto clustering jerárquico como k-medias y visualizaremos los resultados con [highcharter](http://jkunst.com/highcharter/), una librería alucinante para crear gráficos dinámicos que utiliza a su vez *por debajo* la librería Highcharts de JavaScript (no se necesita saber programar en JavaScript para utilizar highcharter, basta con conocer R).
+
+## 1. ¿Qué es el clustering?
+
+El aprendizaje no supervisado es un conjunto de técnicas donde no existe una variable objetivo que ajustar. Es un campo quizás menos desarrollado que el aprendizaje supervisado (no hay tantas técnicas) pero es muy útil para segmentar y entender poblaciones, entre otras cosas. Esto es lo que vamos a hacer precisamente en este taller: segmentar (dividir) a los pokemons en grupos *homogéneos*.
+
+Los métodos de clustering son un conjunto de técnicas orientadas a particionar una población en subgrupos (*clusters*) de manera que los individuos dentro de un grupo sean muy similares pero individuos de grupos distintos sean muy diferentes entre sí. El análisis clustering busca encontrar subgrupos *homogéneos* entre las observaciones. Se trata en definitiva de descubrir una estructura dentro del conjunto de datos.
+
+Por tanto, el análisis cluster no trata de encontrar *la respuesta correcta*, se trata de encontrar formas de ver los datos que nos permitan comprenderlos mejor. Por ejemplo, supongamos que tenemos una baraja de cartas de póker y queremos ver si forman algunas agrupaciones *naturales*. Una persona puede separar las cartas negras de las rojas; otra puede dividir las cartas en corazones, tréboles, diamantes y picas; una tercera persona podría separar las tarjetas con imágenes de las tarjetas sin imágenes, y una cuarta podría hacer un montón de ases, uno de doses, y así sucesivamente. Cada persona tiene razón a su manera: pero en el análisis cluster realmente no hay una sola respuesta *correcta*.
+
+Existen dos enfoques principales y bien diferenciados para realizar un análisis cluster:
+
++ **K-means**, que particiona el conjunto de datos en un número K predeterminado de grupos
++ **Clustering jerárquico**, que genera un gráfico llamado dendograma que permite ver de una vez los clusters generados en un conjunto de datos de 1 (todas las observaciones en un único grupo) a n (un cluster por observación)
+
+
+## 2. Segmentar los pokemon
+
+Vamos a hacer un análisis cluster de los pokemon, que son unos *bichos* de muchas formas y colores que luchan entre sí. Hay varias generaciones de pokemons. Nosotros vamos analizar los de la generación VII, que puedes encontrar [aquí](https://bulbapedia.bulbagarden.net/wiki/List_of_Pok%C3%A9mon_by_base_stats_(Generation_VII)). Los pokemon tienen habilidades que les sirven para la batalla y éstas se puntúan. Nosotros vamos a analizar estas cuatro habilidades:
+
+* **HP:** mide la vida que tiene el Pokemon (*Hit Points*), que se va acabando a medida que recibe golpes.
+* **Attack**: Mide el daño que hace el pokemon cuando ataca.
+* **Defense**: Mide cuánto daño puede resistir el pokemon.
+* **Speed**: Indica la prioridad en la batalla (un pokemon con speed 200 se moverá antes que uno con 100).
+
+## 3. Leer el dataset
+
+Nos vamos a descargar los datos de la página web que he puesto antes, pero lo vamos a hacer *con elegancia*. En vez de hacer *copy + paste* vamos a obtenerlos de la página web mediante *web scraping*. El web scraping consiste en navegar *automáticamente* por una web y extraer de ella información. Esto puede ser muy útil para muchísimas cosas y beneficioso para casi cualquier negocio. A día de hoy, no creo que exista una sola empresa de éxito que no lo haga (o que no quiera hacerlo). De hecho, la empresa reina del *scrapeo* es Google, que para que su buscador funcione así de bien tiene que estar constantemente *scrapeando* la red entera.
+
+Para ello vamos a utilizar `rvest`, un paquete que también forma parte del `tidyverse`. Puedes ampliar información sobre `rvest` [aquí](https://github.com/tidyverse/rvest).
+
+Empezamos cargando las librerías que vamos a necesitar:
+
+```{r, message = FALSE, warning = FALSE, error = FALSE}
+library(tidyverse)
+library(rvest)
+library(highcharter)
+```
+
+Lo siguiente que vamos a hacer es el *scraping*, es decir: leer la tabla de datos de pokemon directamente de la web. Primero pongo el código y ahora lo explico:
+
+```{r, eval = FALSE}
+url <- "http://bulbapedia.bulbagarden.net/wiki/List_of_Pok%C3%A9mon_by_base_stats_(Generation_VII-present)"
+
+pokemons <- read_html(url) %>%
+  html_node(xpath='///*[@id="mw-content-text"]/table[2]') %>%
+  html_table()
+```
+
+```{r, echo = FALSE}
+pokemons <- readRDS(file = "pokemons.RDS")
+```
+
+La variable `url` recoge la dirección donde se encuentra la tabla que nos queremos bajar. El meollo de la cosa viene después. Con la función `read_html` convertimos la página web a un format `XML` (eXtensible Markup Language). Este formato es simplemente una forma de almacenar datos para que otros programas puedan leerlos fácilmente. La parte más *delicada* es la que va a continuación. La función `html_node` sirve para extraer *trozos* de documentos HTML utilizando selectores `XPath` y `CSS`. Los selectores CSS son particularmente útiles junto con [selectorgadget](http://selectorgadget.com/): así podrás encontrar de forma fácil encontrar exactamente qué selector debes utilizar. Si no has usado selectores CSS antes, puedes seguir [este tutorial](http://flukeout.github.io/). Nuestro selector de la tabla es `///*[@id="mw-content-text"]/table[2]`.
+
+Por último la función `html_table` parsea el contenido anterior y le da formato de *data frame*. Así pues el objeto `pokemons` contiene los datos de la tabla html en formato *data frame*, pero antes de poderlos usar vamos a formatearlos un poco.
+
+
+## 4. Análisis exploratorio y preparación de datos
+
+Los datos tienen una pinta un poco fea, puedes comprobarlo haciendo `head(pokemons)` o `str(pokemons)`. 
+Si lo haces, verás que las dos primeras columnas no valen para nada y los nombres contienen acentos y espacios. Vamos a quedarnos solo con las columnas que nos interesan (nombre del  pokemon, HP, Attack, Defense y Speed) y vamos a renombrar la primera de ellas para eliminar la tilde. Esto último se podría hacer utilizando funciones como `iconv` o `stri_trans_general` del paquete `stringi` pero nosotros vamos a hacerlo explícitamente para simplificar el código. Para acceder a los nombres de las columnas utilizamos `colnames`: 
+
+```{r, message = FALSE, warning = FALSE, error = FALSE}
+pokemons %>% select(c(3,4,5,6,9)) -> pokemons
+colnames(pokemons)[1] <- 'Pokemon'
+```
+
+Los algoritmos de análisis cluster dependen del concepto de *medir la distancia* entre las diferentes observaciones que estamos tratando de agrupar. Si una de las variables se mide en una escala mucho mayor que las otras variables, entonces cualquier medida que usemos será influenciada en exceso por esa variable. Sin algún tipo de estandarización, por ejemplo una variable medida en una escala de 0 a 100, no tiene apenas ninguna posibilidad de influir en el resultado respecto a otra medida de 0 al 1000000.
+La forma tradicional de estandarizar las variables es restar su media y dividirla por su desviación estándar. Las variables estandarizadas de esta manera a veces se denominan *z-scores*, y siempre tienen una media de cero y una varianza de uno. En el caso de las variables que contienen valores atípicos (observaciones que son mucho más grandes o más pequeñas que la gran mayoría de los datos), este tipo de estandarización puede ser demasiado severa, reduciendo las observaciones periféricas para que parezcan más cercanas a las demás. Una alternativa es utilizar la desviación absoluta media en lugar de la desviación estándar. Otra posibilidad es restar la mediana y dividirla por el rango intercuartil o la desviación absoluta media. Para los métodos comunes de medición de distancias (discutidos a continuación), centrar los datos restando la media o la mediana no es realmente crítico: lo importante es la división por un factor de escala apropiado.
+
+Si haces un `summary` de nuestra tabla de datos `pokemons` verás que no hay datos atípicos, con lo que la estandarizacón z-score es adecuada. Podemos hacer eso con la función `scale`:
+
+```{r, message = FALSE, warning = FALSE, error = FALSE}
+pokemons %>% 
+  select(-Pokemon) %>% 
+  scale %>% 
+  as.data.frame() -> pokemons_scaled
+```
+
+Antes de aplicar `scale` hemos usado la función `select` para quitar la columna `Pokemon` porque no es una columna numérica y no va a formar parte del clustering.
+
+## 5. Clustering de los pokemon
+
+La medida de distancia más común y la predeterminada para la mayoría de los programas que realizan análisis de cluster es la distancia euclidiana o euclídea, que es una extensión de la noción habitual de la distancia entre dos puntos en un plano. La distancia euclidiana entre dos observaciones se calcula como la raíz cuadrada de la suma de los cuadrados de las distancias entre las variables correspondientes en las dos observaciones que se consideran. Otra medida ampliamente utilizada es la distancia de Manhattan, llamada así porque es similar a la distancia entre dos puntos de una ciudad, donde solo se puede recorrer una cuadrícula de calles. Se calcula sumando el valor absoluto de las diferencias de las variables correspondientes, y es menos probable que se vea influenciado por una diferencia muy grande entre solo una de las variables. La distancia de Canberra es interesante porque realiza su propia estandarización; los valores absolutos de las diferencias se dividen por el valor absoluto de la suma de las variables correspondientes en las dos observaciones. Dependiendo de los valores y las distribuciones de las variables en el conjunto de datos que se agrupan, estas diferentes medidas de distancia pueden señalar diferentes aspectos de la estructura del conjunto de datos. 
+
+Debe prestarse especial atención a las variables binarias, es decir, las variables que toman solo uno de dos valores como VERDADERO o FALSO, especialmente cuando se usan junto con variables continuas. Generalmente hay dos tipos de medidas que se usan con datos binarios. Las medidas simétricas ven dos observaciones como cercanas si la característica binaria está ausente en ambas o presente en ambas, mientras que las medidas asimétricas solo ven las observaciones como cercanas si la característica está presente para ambas. Para algunos métodos de agrupamiento, se debe calcular la matriz de distancia completa; para otros métodos, las distancias solo se calculan según sea necesario.
+
+Nosotros vamos a calcular la matriz de distancias completa y vamos a utilizar la distancia euclídea. Para ello utilizamos la función `dist`:
+
+```{r, message = FALSE, warning = FALSE, error = FALSE}
+distancia <- dist(pokemons_scaled, method = "euclidean")
+```
+
+### ¿En cuántos grupos dividir a los pokemon?
+
+No hay una respuesta correcta para esta pregunta. Hay opciones analíticas para responder a esta pregunta. La librería `clvalid` implementa diversos métodos para obtener un número óptimo de grupos pero no debes tomar estos resultados como una verdad absoluta. 
+
+Si aplicas un algoritmo de K-means, la recomendación es probar diferentes elecciones de K, buscando la que genere la solución más útil e interpretable. Esta decisión se puede apoyar en un cluster jerárquico, que es un enfoque alternativo en donde no es necesario especificar el número de particiones. Además representa los resultados de una manera muy atractiva, en un gráfico llamado dendograma.
+
+El tipo más común de cluster jerárquico tiene un enfoque bottom-up o aglomerativo, lo que significa que el dendograma se construye a partir de las observaciones individuales y combina clusters hasta unir a todos los individuos en un único grupo.
+
+Un dendograma es útil para decidir en cuántos grupos dividir a la población. Para hacer un cluster jerárquico podemos utilizar la función `hclust` y luego visualizar el dendograma resultante con `plot`:
+
+```{r, message = FALSE, warning = FALSE, error = FALSE, fig.align='center', fig.height=4,  fig.width=8, dev='svg'}
+clusterAt <- hclust(distancia, method = "ward.D")
+plot(clusterAt)
+```
+
+Hay cuatro tipos de *linkage* en un algoritmo jerárquico:
+
++ **Completo**: una vez calculadas todas las diferencias por parejas entre las observaciones en el grupo A y las observaciones en el grupo B, se unen aquellos cuya difrencia máxima es la menor de todas
++ **Sencillo**: una vez calculadas todas las diferencias por parejas entre las observaciones en el grupo A y las observaciones en el grupo B, se unen aquellos cuya difrencia mínima es la menor de todas
++ **Medio**: una vez calculadas todas las diferencias por parejas entre las observaciones en el grupo A y las observaciones en el grupo B, se unen aquellos cuya difrencia media es la menor de todas
++ **Ward**: en cada etapa, se unen los dos clusters para los cuales se tenga el menor incremento en el valor total de la suma de los cuadrados de las diferencias, dentro de cada cluster, de cada individuo al centroide del cluster.
+
+Nosotros hemos optado por la última de ellas.
+
+A la vista del dendograma, parece que una opción razonable es dividir a la población de pokemon en cuatro grandes grupos, señalados con los recuadros rojos:
+
+```{r, echo = FALSE}
+plot(clusterAt)
+rect.hclust(clusterAt, k = 4, border = "red")
+```
+
+### K-means
+
+```{r, echo = FALSE}
+set.seed(1234)
+```
+
+Ahora vamos a alicar un K-means con K=4. Esto se hace con la función `kmeans` con `centers = 4`:
+
+```{r, message = FALSE, warning = FALSE, error = FALSE}
+KM <- kmeans(pokemons_scaled, centers = 4)
+```
+
+El objeto KM contiene la columna `cluster`, que identifica el cluster resultado al que pertenence de cada uno de los pokemons. Añadimos esta columna a nuestro dataset `pokemons`:
+
+```{r, message = FALSE, warning = FALSE, error = FALSE}
+pokemons %>% mutate(cluster = KM$cluster) -> pokemons
+```
+
+Podemos ver que el número de pokemons dentro de cada cluster es significativo haciendo un conteo con `dplyr`:
+
+```{r, message = FALSE, warning = FALSE, error = FALSE}
+pokemons %>%
+  arrange(cluster) %>%
+  group_by(cluster) %>%
+  summarize(total=n())
+```
+
+## 6. Bautizando a los grupos
+
+Para poner nombre a los grupos, lo primero que vamos a hacer es calcular el centroide de cada cluster:
+
+```{r, message = FALSE, warning = FALSE, error = FALSE}
+pokemons %>%
+  arrange(cluster) %>%
+  group_by(cluster) %>%
+  summarize(HP=mean(HP),
+            Attack=mean(Attack),
+            Defense=mean(Defense),
+            Speed=mean(Speed)) -> pokemon_stats
+pokemon_stats
+```
+
+
+Vemos que los perfiles son muy diferentes y es fácil ponerles nombre:
+
++ Cluster 1: Supercracks
++ Cluster 2: Ofensivos
++ Cluster 3: Defensivos
++ Cluster 4: Flojos
+
+Para terminar vamos a hacer un gráfico dinámico con `highcharter`, una librería muy imporesionante que utiliza a su vez a la librería Highcharts de JavaScript. Su sintaxis es similar a la de `ggplot` y está muy bien documentada [aquí](http://jkunst.com/highcharter/), por si quieres investigar sobre ella. El gráfico que vamos a hacer es de tipo araña y muesta el perfil de los centroides según hemos calculado en la tabla `pokemon_stats`:
+
+```{r, message = FALSE, warning = FALSE, error = FALSE}
+highchart() %>%
+  hc_plotOptions(series = list(marker = list(enabled = TRUE, symbol="circle"))) %>%
+  hc_chart(polar = TRUE, type = "line") %>%
+  hc_title(text = "Clustering de Pokemons") %>%
+  hc_subtitle(text = "Perfil promedio de los clusters") %>%
+  hc_xAxis(categories = c("HP", "Attack", "Defense", "Speed"),
+           tickmarkPlacement = 'on',
+           lineWidth = 0) %>%
+  hc_yAxis(gridLineInterpolation = 'polygon',
+           lineWidth = 0,
+           min = 0) %>%
+  hc_series(
+    list(name = "Supercracks", data = pokemon_stats[1,-1] %>% as.numeric),
+    list(name = "Ofensivos"  , data = pokemon_stats[2,-1] %>% as.numeric),
+    list(name = "Defensivos" , data = pokemon_stats[3,-1] %>% as.numeric),
+    list(name = "Flojos"    , data = pokemon_stats[4,-1] %>% as.numeric)) %>%
+  hc_exporting(enabled = TRUE)
+
+```
+
+
+## 7. Retos
+
+### Primer reto
+
+Que ejecutes este código tú solo. Parece fácil pero no lo es pues necesitarás instalar R y RStudio en tu ordenador: en [este video](https://gonzalezgouveia.com/como-instalar-rstudio-en-windows-10/) te explican cómo. 
+
+Después tendrás que instalar las librerías que hemos utilizado en el taller, que son `tidyverse`, `rvest` y `highcharter`. Esto se hace con la sentencia `install.packages` y en este otro [vídeo](https://gonzalezgouveia.com/instalar-paquetes-en-r/) puedes ver cómo se hace.
+
+Cuando hayas hecho esto ya estás preparado para ejecutar tú el taller. Abre RStudio, haz `File -> New file -> R Script` y ve copiando y ejecutando el código que hemos visto. Para ejecutar un trozo de código, sólo tienes que seleccionarlo con el ratón (se quedará resaltado sobre un fondo de color azul) y hacer *click* en el botón *Run* que encontrarás en la parte superior derecha de la ventana donde está el código.
+
+Si consigues reproducir el taller, habrás dado un paso de gigante.
+
+### Segundo reto
+
+El conjunto de datos `pbp2018.RDS` contiene estadísticas de los jugadores de baloncesto de la liga ACB de baloncesto de la temporada 2018. Lo ha creado para nosotros [Sergio Olmos](https://es.wikipedia.org/wiki/Sergio_Olmos), jugador profesional de baloncesto y data scientist. Sergio ha desarrollado dos librerías de R para analizar datos de baloncesto, tanto de la liga española (`rfeb`) como de la europea (`eurolig`). Puedes encontrarlos en [su página de GitHub](https://github.com/solmos).
+
+El conjunto que nos ha creado tiene las siguientes variables:
+
++ `games`: Número de partidos jugados
++ `fg2m`: Tiros de 2 anotados
++ `fg2a`: Tiros de 2 intentados
++ `fg3m`: Tiros de 3 anotados
++ `fg3a`: Tiros de 3 intentados
++ `ftm`: Tiros libres anotados
++ `fta`: Tiros libres intentados
++ `pts`: Puntos
++ `ast`: Asistencias
++ `tov`: Turnovers
+
+Tenéis que hacer un análisis cluster para dividir a los jugadores en grupos similares. Para ello tendréis que: revisar las columnas para comprobar si tienen o no outliers, estadarizar las columnas, medir distancias, decidir cuántos grupos obtener, visualizar los resultados y *bautizar* los grupos.
+
+Puedes encontrar el dataset [aquí](http://fronkonstin.com/wp-content/uploads/2020/03/pbp2018.RDS).
+
+Lo más nuevo de este reto respecto al anterior es que ahora los datos, en vez de *scrapearlos* de internet, los tienes que leer de un fichero externo llamado `pbp2018.RDS`. Para ello guarda este fichero en algún sitio y ejecuta la sentencia `read.RDS`. Por ejemplo, si guardas en fichero en `C:\Documents`, tendrás que ejecutar la sentencia siguiente:
+
+```{r, eval = FALSE}
+basket <- readRDS("C:/Documents/pbp2018.RDS")
+```
+
+Date cuenta de dos detalles. El primero es que las barras del *path* en donde se encuentra el archivo no son de la forma "\" habitual sino de la forma "/" porque si no da error: cosas de R. Lo segundo es que además de leer los datos, los he nombrado con el nombre `basket` para poder usarlos. Es decir, nuestro conjunto `basket` es equivalente a nuestro conjunto `pokemons` anterior. Una vez hayas hecho esto, estás preparado para intentar hacer un clustering de los jugadores de baloncesto.
