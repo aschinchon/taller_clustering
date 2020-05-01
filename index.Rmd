@@ -238,6 +238,8 @@ Después tendrás que instalar las librerías que hemos utilizado en el taller, 
 
 Cuando hayas hecho esto ya estás preparado para ejecutar tú el taller. Abre RStudio, haz `File -> New file -> R Script` y ve copiando y ejecutando el código que hemos visto. Para ejecutar un trozo de código, sólo tienes que seleccionarlo con el ratón (se quedará resaltado sobre un fondo de color azul) y hacer *click* en el botón *Run* que encontrarás en la parte superior derecha de la ventana donde está el código.
 
+Si no quieres instalar R y RStudio en tu ordenador, puedes ejecutar el código online, con [RStudio Cloud](https://rstudio.cloud/). Sólo tienes que registrarte. Una vez que lo hayas hecho, puedes crear un space y un project y ponerte a trabajar. Es muy fácil y en [este vídeo](https://www.youtube.com/watch?v=U-pLWJO6-P4) lo explican muy bien. Está en inglés, pero si lo prefieres en español, puedes mirar [este otro](https://www.youtube.com/watch?v=d8tj0-QZU_s).
+
 Si consigues reproducir el taller, habrás dado un paso de gigante.
 
 ### Segundo reto
